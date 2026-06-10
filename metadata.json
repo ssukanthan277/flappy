@@ -1,0 +1,6 @@
+{
+  "name": "Pygame Flappy Bird Simulator",
+  "description": "An interactive Web IDE and sandbox simulating a custom Pygame Flappy Bird clone with real-time controls, complete Python source code export, and installation guides.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
