@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { GameConfig } from "../pygameCodeTemplate";
 import { 
-  Volume2, VolumeX, ShieldAlert, Zap, RefreshCw, Play, CircleDot, Info, 
-  Shield, Coins, Clock, Flame, ShoppingBag, Home, Sparkles, Undo2, ChevronRight, Compass
+  Volume2, VolumeX, Shield, Zap, Coins, Clock, Flame, 
+  ShoppingBag, Home, Sparkles, RefreshCw, Play, Settings, 
+  Info, X, Trophy, ChevronRight, HelpCircle
 } from "lucide-react";
 
 interface PygameSimulatorProps {
@@ -12,7 +13,7 @@ interface PygameSimulatorProps {
   onStatsUpdate?: (y: number, velocity: number) => void;
 }
 
-// 8-Bit Retro Synth Engine using Web Audio API
+// 8-Bit Retro Synth Sound Effects Engine (Web Audio API)
 class AudioSynth {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
@@ -44,7 +45,7 @@ class AudioSynth {
 
       osc.type = "sine";
       osc.frequency.setValueAtTime(190, now);
-      osc.frequency.exponentialRampToValueAtTime(390, now + 0.14);
+      osc.frequency.exponentialRampToValueAtTime(395, now + 0.14);
 
       gain.gain.setValueAtTime(0.12, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.14);
@@ -142,16 +143,16 @@ class AudioSynth {
 
       osc.type = "sawtooth";
       osc.frequency.setValueAtTime(130, now);
-      osc.frequency.exponentialRampToValueAtTime(25, now + 0.38);
+      osc.frequency.exponentialRampToValueAtTime(25, now + 0.4);
 
       gain.gain.setValueAtTime(0.16, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.42);
 
       osc.connect(gain);
       gain.connect(this.ctx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.4);
+      osc.stop(now + 0.42);
     } catch (e) {}
   }
 }
@@ -237,15 +238,19 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
   const [highestCombo, setHighestCombo] = useState(1);
   const [powerupsCollected, setPowerupsCollected] = useState(0);
 
-  // Core Game View HUD triggers
+  // Game state flow
   const [gameState, setGameState] = useState<"idle" | "playing" | "game_over">("idle");
-  const [isMuted, setIsMuted] = useState(false);
-  const [isKeyboardAlertVisible, setIsKeyboardAlertVisible] = useState(true);
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    return localStorage.getItem("pygame_muted") === "true";
+  });
+  const [isPaused, setIsPaused] = useState(false);
+  const [isShopOpen, setIsShopOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Buff Timers in React State for the responsive HUD Display area below the score
+  // Active Buffs list for transparent overlay inside canvas frame
   const [activeBuffsList, setActiveBuffsList] = useState<ActiveBuff[]>([]);
 
-  // Shop Cosmetics Equipment
+  // Cosmetics setup
   const [equippedSkin, setEquippedSkin] = useState<string>(() => {
     return localStorage.getItem("pygame_equipped_skin") || "orange";
   });
@@ -253,13 +258,12 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     const saved = localStorage.getItem("pygame_unlocked_skins");
     return saved ? JSON.parse(saved) : ["orange"];
   });
-  const [isShopOpen, setIsShopOpen] = useState(false);
 
-  // Live references to state for use in performance requestAnimationFrame loop
+  // Keep references updated for the dynamic RAF animation loop
   const configRef = useRef(config);
   const stateRef = useRef(gameState);
+  const pausedRef = useRef(isPaused);
   
-  // Game simulation state variables
   const playerRef = useRef({
     y: 300,
     velocity: 0,
@@ -274,12 +278,11 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
   const floatTextsRef = useRef<FloatingText[]>([]);
   
   const frameCounterRef = useRef(0);
-  const nextPowerUpSpawnRef = useRef(500); // cooldown in frames before next spawn check
-  const comboTimerRef = useRef(0); // time remaining for combo decay
+  const nextPowerUpSpawnRef = useRef(500); 
+  const comboTimerRef = useRef(0); 
   const scoreInLoopRef = useRef(0);
-  const tailLocationsRef = useRef<{x: number; y: number}[]>([]); // trail coordinates for Turbo
+  const tailLocationsRef = useRef<{x: number; y: number}[]>([]); 
 
-  // Active Buffs reference kept for high accuracy physics checks
   const buffsRef = useRef<{
     invincible: number;
     turbo: number;
@@ -294,7 +297,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     rainbow: 0,
   });
 
-  // Sync config & state refs
+  // Sync refs
   useEffect(() => {
     configRef.current = config;
   }, [config]);
@@ -303,15 +306,20 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     stateRef.current = gameState;
   }, [gameState]);
 
-  // Audio synth initialization
+  useEffect(() => {
+    pausedRef.current = isPaused;
+  }, [isPaused]);
+
+  // Audio setup
   useEffect(() => {
     if (!synthRef.current) {
       synthRef.current = new AudioSynth();
     }
     synthRef.current.setMuted(isMuted);
+    localStorage.setItem("pygame_muted", isMuted.toString());
   }, [isMuted]);
 
-  // Save skins helpers
+  // Buy Skin helper
   const buySkin = (skin: string, cost: number) => {
     if (totalCoins >= cost && !unlockedSkins.includes(skin)) {
       const updatedCoins = totalCoins - cost;
@@ -322,7 +330,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
       localStorage.setItem("pygame_flappy_total_coins", updatedCoins.toString());
       localStorage.setItem("pygame_unlocked_skins", JSON.stringify(updatedSkins));
       localStorage.setItem("pygame_equipped_skin", skin);
-      if (onLog) onLog(`[SHOP] Unlocked & Equipped cosmetic skin: ${skin}! Spent ${cost} coins.`);
+      synthRef.current?.playPowerUp();
     }
   };
 
@@ -330,11 +338,23 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     if (unlockedSkins.includes(skin)) {
       setEquippedSkin(skin);
       localStorage.setItem("pygame_equipped_skin", skin);
-      if (onLog) onLog(`[SHOP] Equipped skin styling: ${skin}`);
+      synthRef.current?.playJump();
     }
   };
 
-  // Particle explosion generators
+  const resetAllProgress = () => {
+    if (window.confirm("Are you sure you want to delete all coins, skins, and highscores?")) {
+      localStorage.clear();
+      setBestScore(0);
+      setTotalCoins(0);
+      setEquippedSkin("orange");
+      setUnlockedSkins(["orange"]);
+      setIsSettingsOpen(false);
+      synthRef.current?.playCrash();
+    }
+  };
+
+  // Particle generators
   const spawnExplosion = (x: number, y: number, color: string, count = 12, sizeSpread = 4, vxSpread = 5) => {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -343,7 +363,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         x,
         y,
         vx: Math.cos(angle) * velocity,
-        vy: Math.sin(angle) * velocity - (Math.random() * 1.5), // drifting slightly upwards
+        vy: Math.sin(angle) * velocity - (Math.random() * 1.5),
         color,
         size: 1.5 + Math.random() * sizeSpread,
         alpha: 1,
@@ -369,7 +389,6 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     });
   };
 
-  // Add customized game logs & notifications
   const addFloatingText = (x: number, y: number, text: string, color = "#ffffff", size = 14) => {
     floatTextsRef.current.push({
       x,
@@ -382,32 +401,22 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     });
   };
 
-  // Handles score updates with integrated multiplier checks & dynamic difficulty curves
   const incrementScore = (increase = 1) => {
     setScore((prev) => {
       const newScore = prev + increase;
       scoreInLoopRef.current = newScore;
       if (onScoreUpdate) onScoreUpdate(newScore);
-      
-      // Log Success milestones
-      if (onLog) onLog(`[SUCCESS] Passed column corridor! Score: ${newScore}`);
 
-      // High Score check
       setBestScore((currentBest) => {
         if (newScore > currentBest) {
           localStorage.setItem("pygame_flappy_high_score", newScore.toString());
-          if (onLog) onLog(`[AWARD] 🏆 New high score established: ${newScore}!`);
           return newScore;
         }
         return currentBest;
       });
 
-      // Difficulty level tier trigger alert
       if (newScore > 0 && newScore % 10 === 0) {
-        const nextLevel = Math.floor(newScore / 10) + 1;
-        if (onLog) onLog(`[LEVEL UP] Environment escalated to Tier ${nextLevel}! Pipes are tighter & scrolls are faster.`);
-        // Sparkle explosion inside background on leveling
-        spawnExplosion(200, 150, "#10b981", 30, 6, 8);
+        spawnExplosion(200, 150, "#10b981", 24, 6, 8);
       }
 
       return newScore;
@@ -416,7 +425,6 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
   };
 
   const terminateGame = () => {
-    // If invincibility or ultimate rainbow shield is active, crash bypassed!
     if (buffsRef.current.invincible > 0 || buffsRef.current.rainbow > 0) {
       return;
     }
@@ -424,19 +432,13 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     setGameState("game_over");
     synthRef.current?.playCrash();
     
-    // Persist final aggregated coins to localStorage
+    // Save coins
     const savedTotalCoins = parseInt(localStorage.getItem("pygame_flappy_total_coins") || "0", 10);
     const finalizedCoins = savedTotalCoins + coinsInSession;
     setTotalCoins(finalizedCoins);
     localStorage.setItem("pygame_flappy_total_coins", finalizedCoins.toString());
-
-    if (onLog) {
-      onLog(`[CRITICAL] Collision registered at Y: ${Math.round(playerRef.current.y)}. Engine collapsed!`);
-      onLog(`[SUMMARY] Score: ${scoreInLoopRef.current} | Coins Collected: ${coinsInSession} | Unbroken Combo Peak: ${highestCombo} | Power-ups Gained: ${powerupsCollected}`);
-    }
   };
 
-  // Reset core simulation matrices & buffers
   const initGameEntities = () => {
     playerRef.current = {
       y: 300,
@@ -452,7 +454,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     tailLocationsRef.current = [];
     
     frameCounterRef.current = 0;
-    nextPowerUpSpawnRef.current = 400 + Math.floor(Math.random() * 400); // random frame start (approx 10s of game-time)
+    nextPowerUpSpawnRef.current = 400 + Math.floor(Math.random() * 400);
     comboTimerRef.current = 0;
     scoreInLoopRef.current = 0;
 
@@ -464,6 +466,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     setCombo(1);
     setHighestCombo(1);
     setPowerupsCollected(0);
+    setIsPaused(false);
 
     if (onScoreUpdate) onScoreUpdate(0);
   };
@@ -471,49 +474,49 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
   const restartAction = () => {
     initGameEntities();
     setGameState("playing");
-    if (onLog) onLog(`[INFO] Restarted simulation loop. Activeequipped skin: ${equippedSkin}`);
   };
 
   const triggerJump = () => {
+    if (isPaused || isShopOpen || isSettingsOpen) return;
+
     const currentForce = configRef.current.jumpForce;
     if (stateRef.current === "idle") {
       initGameEntities();
       setGameState("playing");
       playerRef.current.velocity = currentForce;
       synthRef.current?.playJump();
-      if (onLog) onLog("[INFO] Interactive Pygame main framework loaded. Input thread bound.");
     } else if (stateRef.current === "playing") {
       playerRef.current.velocity = currentForce;
       synthRef.current?.playJump();
-      // Occasionally emit splash visual under ball on jump
-      spawnExplosion(playerRef.current.x, playerRef.current.y + 12, "rgba(255,255,255,0.3)", 3, 2, 2);
-    } else if (stateRef.current === "game_over" && !isShopOpen) {
+      spawnExplosion(playerRef.current.x, playerRef.current.y + 12, "rgba(255,255,255,0.25)", 3, 2, 2);
+    } else if (stateRef.current === "game_over") {
       restartAction();
     }
   };
 
-  // Bind hardware keyboard listeners
+  // Keyboard binding
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isShopOpen) return;
+      if (isShopOpen || isSettingsOpen) return;
       if (e.code === "Space" || e.code === "ArrowUp") {
         e.preventDefault();
         triggerJump();
       } else if (e.code === "KeyR" && stateRef.current === "game_over") {
         e.preventDefault();
         restartAction();
+      } else if (e.code === "KeyP" && stateRef.current === "playing") {
+        e.preventDefault();
+        setIsPaused(prev => !prev);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [bestScore, isShopOpen, equippedSkin, unlockedSkins, coinsInSession, totalCoins]);
+  }, [bestScore, isShopOpen, isSettingsOpen, equippedSkin, unlockedSkins, coinsInSession, totalCoins, isPaused, gameState]);
 
-  // Obstacle Generation matching standard Pygame geometry, but includes spawning coin nodes within opening gap
+  // Spawns
   const spawnPipe = () => {
     const width = 70;
-    
-    // Difficulty curve adjustments (gap narrows as points scale up)
     const activeLevel = Math.floor(scoreInLoopRef.current / 10) + 1;
     const initialGap = configRef.current.pipeGap;
     const scaledGap = Math.max(105, initialGap - (activeLevel - 1) * 6);
@@ -533,9 +536,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
       passed: false,
     });
 
-    if (onLog) onLog(`[SPAWN] Pipe Obstacle styled at X: 410. Center gap slot: ${scaledGap}px. (Level: ${activeLevel})`);
-
-    // Spawning 1 standard coin node right inside the open middle corridor center of this column
+    // Spawn 1 standard gold coin center corridor
     coinsRef.current.push({
       x: 400 + 10 + (width / 2) - 8,
       y: topHeight + (scaledGap / 2),
@@ -546,7 +547,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
       collected: false
     });
 
-    // Strategy 2: 25% chance of spawning a follow-up wave of 2 wavy coins after the pipes
+    // Strategy 2: 25% wave of coins trailing after pipes
     if (Math.random() > 0.72) {
       const spacing = 45;
       const coinHeight = topHeight + (scaledGap / 2);
@@ -571,17 +572,13 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     }
   };
 
-  // Spawns power-up bubble at strategic safe vertical points avoiding existing pipes
   const triggerPowerUpBubbleSpawn = () => {
-    // Determine a safe Y coordinate keeping it within reach
-    const bubbleY = 120 + Math.floor(Math.random() * 300); // vertical reach [120 - 420]
-    
-    // Choose bubble type dynamically
+    const bubbleY = 120 + Math.floor(Math.random() * 300);
     const roll = Math.random();
     let type: "invincible" | "turbo" | "magnet" | "slow_mo" | "rainbow" = "magnet";
     
     if (roll < 0.05) {
-      type = "rainbow"; // 5% super rare ultimate power
+      type = "rainbow"; 
     } else if (roll < 0.28) {
       type = "invincible";
     } else if (roll < 0.52) {
@@ -592,7 +589,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
       type = "magnet";
     }
 
-    const newBubble: FloatingPowerUp = {
+    bubblesRef.current.push({
       x: 400 + 12,
       y: bubbleY,
       radius: 14,
@@ -600,20 +597,9 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
       id: "bubble_" + Math.random().toString(),
       age: 0,
       angle: 0
-    };
-
-    bubblesRef.current.push(newBubble);
-    
-    let textAlert = "MAGNET BUBBLE";
-    if (type === "invincible") textAlert = "INVINCIBLE SHIELD";
-    if (type === "turbo") textAlert = "TURBO SPEED";
-    if (type === "slow_mo") textAlert = "TIME WARP";
-    if (type === "rainbow") textAlert = "🌟 RARE RAINBOW";
-
-    if (onLog) onLog(`[ALERT] Floating ${textAlert} bubble materialized in the sky! Catch it!`);
+    });
   };
 
-  // Classic math for perfect bounding circle to aligned solid rectangle overlap
   const checkCircleRectOverlap = (
     cx: number, cy: number, radius: number,
     rx: number, ry: number, rw: number, rh: number
@@ -627,7 +613,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     return (dx * dx + dy * dy) < (radius * radius);
   };
 
-  // Primary animation render loop
+  // Main canvas RAF loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -639,31 +625,24 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
     const gameLoop = () => {
       const currentConfig = configRef.current;
       const currentState = stateRef.current;
+      const isLoopPaused = pausedRef.current;
 
-      // Calculate dynamic level increments
       const activeDifficultyLevel = Math.floor(scoreInLoopRef.current / 10) + 1;
-      
-      // Determine base game speeds
       let activeWorldSpeed = currentConfig.gameSpeed + (activeDifficultyLevel - 1) * 0.35;
       
-      // Apply powerup buff scale variations
       if (buffsRef.current.slow_mo > 0) {
-        activeWorldSpeed *= 0.5; // slow time by 50%
+        activeWorldSpeed *= 0.5;
       }
       if (buffsRef.current.turbo > 0 || buffsRef.current.rainbow > 0) {
-        activeWorldSpeed *= 1.8; // speed-up turbo boost
+        activeWorldSpeed *= 1.8;
       }
-
-      // Safe clamp scroll velocity
       if (activeWorldSpeed > 8.5) activeWorldSpeed = 8.5;
 
-      // 1. PHYSICAL GAME MATH UPDATES (Only if actively 'playing')
-      if (currentState === "playing") {
+      // 1. UPDATE STATES IF PLAYING & NOT PAUSED
+      if (currentState === "playing" && !isLoopPaused) {
         frameCounterRef.current += 1;
-
         const player = playerRef.current;
         
-        // Accumulate trailing dots coordinates for motion blur trail during turbo boost
         if (buffsRef.current.turbo > 0 || buffsRef.current.rainbow > 0) {
           tailLocationsRef.current.push({ x: player.x, y: player.y });
           if (tailLocationsRef.current.length > 5) {
@@ -673,17 +652,14 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
           tailLocationsRef.current = [];
         }
 
-        // Apply constant gravity
         player.velocity += currentConfig.gravity;
         if (player.velocity > 10.0) player.velocity = 10.0;
         player.y += player.velocity;
 
-        // Sync coordinates stats up
-        if (onStatsUpdate && frameCounterRef.current % 8 === 0) {
+        if (onStatsUpdate && frameCounterRef.current % 10 === 0) {
           onStatsUpdate(Math.round(player.y), Number(player.velocity.toFixed(2)));
         }
 
-        // Sky barrier check (bypassed if invincible is on, otherwise crash)
         if (player.y - player.radius < 0) {
           if (buffsRef.current.invincible > 0 || buffsRef.current.rainbow > 0) {
             player.y = player.radius + 1;
@@ -693,7 +669,6 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
           }
         }
 
-        // Ground crash boundary
         const groundLevel = 600 - 60;
         if (player.y + player.radius > groundLevel) {
           player.y = groundLevel - player.radius;
@@ -701,23 +676,20 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
           terminateGame();
         }
 
-        // Spawning pipeline obstacle scheduling
         const activeInterval = Math.max(75, currentConfig.pipeInterval - (activeDifficultyLevel - 1) * 6);
         if (frameCounterRef.current % activeInterval === 0) {
           spawnPipe();
         }
 
-        // Powerup Spawner Scheduling manager: Check spawn coordinates every randomized interval of frames
         if (bubblesRef.current.length === 0 && activeBuffsList.length === 0) {
           nextPowerUpSpawnRef.current -= 1;
           if (nextPowerUpSpawnRef.current <= 0) {
             triggerPowerUpBubbleSpawn();
-            // Re-seed frame count for next check
-            nextPowerUpSpawnRef.current = 600 + Math.floor(Math.random() * 600); // 10-20 seconds
+            nextPowerUpSpawnRef.current = 600 + Math.floor(Math.random() * 600);
           }
         }
 
-        // Update active bubbles movement & collections
+        // Update Bubbles
         const bubbles = bubblesRef.current;
         for (let i = bubbles.length - 1; i >= 0; i--) {
           const b = bubbles[i];
@@ -725,73 +697,55 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
           b.age += 1;
           b.angle += 0.04;
 
-          // Float math sine offset
           const floatOffset = Math.sin(frameCounterRef.current * 0.06) * 1.5;
           b.y += floatOffset;
 
-          // Particle sparkle emitting from floating powerups occasionally
           if (frameCounterRef.current % 12 === 0) {
-            let sparkColor = "#e0a96d"; // gold
-            if (b.type === "turbo") sparkColor = "#38bdf8"; // blue
-            if (b.type === "magnet") sparkColor = "#c084fc"; // purple
-            if (b.type === "slow_mo") sparkColor = "#4ade80"; // green
+            let sparkColor = "#e0a96d";
+            if (b.type === "turbo") sparkColor = "#38bdf8";
+            if (b.type === "magnet") sparkColor = "#c084fc";
+            if (b.type === "slow_mo") sparkColor = "#4ade80";
             if (b.type === "rainbow") sparkColor = `hsl(${frameCounterRef.current % 360}, 100%, 70%)`;
             spawnSparkle(b.x, b.y, sparkColor);
           }
 
-          // Sweep expired bubbles offscreen or older than 8s (480 frames)
           if (b.x + b.radius < -20 || b.age > 480) {
             bubbles.splice(i, 1);
             continue;
           }
 
-          // Collision check: player captures power-up bubble!
           const distance = Math.sqrt((player.x - b.x)**2 + (player.y - b.y)**2);
           if (distance < player.radius + b.radius) {
-            // TRIGGER SATISFYING MULTI-POP EXPLOSION
-            let popColor = "#eab308"; // gold
+            let popColor = "#eab308";
             let floatingAlert = "INVINCIBLE!";
-            let logMsg = "[AWARD] Invincibility Core enabled! Obstacles bypassed.";
-            let maxFrames = 300; // 5 seconds
+            let maxFrames = 300; 
 
             if (b.type === "turbo") {
               popColor = "#3b82f6";
               floatingAlert = "TURBO BOOST!";
-              logMsg = "[AWARD] Speed engine activated! Can phase directly through obstacles.";
-              maxFrames = 180; // 3 seconds
+              maxFrames = 180;
             }
             if (b.type === "magnet") {
               popColor = "#a855f7";
               floatingAlert = "COIN MAGNET!";
-              logMsg = "[AWARD] Coin Attraction aura generated.";
-              maxFrames = 360; // 6 seconds
+              maxFrames = 360;
             }
             if (b.type === "slow_mo") {
               popColor = "#10b981";
               floatingAlert = "TIME SLOW!";
-              logMsg = "[AWARD] Local relativistic dilator active. Obstacles slowed.";
-              maxFrames = 300; // 5 seconds
+              maxFrames = 300;
             }
             if (b.type === "rainbow") {
               popColor = "#ec4899";
-              floatingAlert = "ULTIMATE POWER!";
-              logMsg = "[AWARD] RAINBOW CORES ALIGNED! Invincible + Turbo + Magnet combined!";
-              maxFrames = 300; // 5 seconds
+              floatingAlert = "ULTIMA CORE!";
+              maxFrames = 300;
             }
 
-            // Play audio chime
             synthRef.current?.playPowerUp();
-
-            // Spawn explosive particle bursts
-            spawnExplosion(b.x, b.y, popColor, 30, 7, 7);
-            addFloatingText(b.x, b.y - 10, floatingAlert, popColor, 15);
-            
-            if (onLog) onLog(logMsg);
-
-            // Increment totals
+            spawnExplosion(b.x, b.y, popColor, 25, 7, 7);
+            addFloatingText(b.x, b.y - 12, floatingAlert, popColor, 15);
             setPowerupsCollected(p => p + 1);
 
-            // Store buff timers in references
             if (b.type === "rainbow") {
               buffsRef.current.rainbow = maxFrames;
               buffsRef.current.invincible = maxFrames;
@@ -801,12 +755,11 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
               buffsRef.current[b.type] = maxFrames;
             }
 
-            // Remove collected bubble
             bubbles.splice(i, 1);
           }
         }
 
-        // Decay active power-up buff references & update status array for React HUD
+        // Decay buffs
         const updatedReactBuffs: ActiveBuff[] = [];
         const buffKeys = ["invincible", "turbo", "magnet", "slow_mo", "rainbow"] as const;
         
@@ -826,17 +779,14 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
           }
         });
         
-        // Batch React update to ensure no infinite render loops (JSON serialization gating)
         if (JSON.stringify(activeBuffsList) !== JSON.stringify(updatedReactBuffs)) {
           setActiveBuffsList(updatedReactBuffs);
         }
 
-        // Update active coins scrolling, spin, and magnet physics attraction vectors
+        // Update Coins
         const coins = coinsRef.current;
         for (let i = coins.length - 1; i >= 0; i--) {
           const c = coins[i];
-          
-          // Magnet attraction calculation
           const hasMagnetActive = buffsRef.current.magnet > 0 || buffsRef.current.rainbow > 0;
           let movedByMagnet = false;
 
@@ -845,7 +795,6 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
             const dy = player.y - c.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
             
-            // Magnet pull active within 160 pixels
             if (dist < 160) {
               const pullSpeed = 4.5 + (160 - dist) * 0.08;
               c.x += (dx / dist) * pullSpeed;
@@ -858,25 +807,19 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
             c.x -= activeWorldSpeed;
           }
 
-          c.angle += 0.2; // spin angle
+          c.angle += 0.2;
 
-          // Remove coin if scrolled out
           if (c.x + c.radius < -20) {
             coins.splice(i, 1);
             continue;
           }
 
-          // Collision checking (ball triggers collection)
           const distToPlayer = Math.sqrt((player.x - c.x)**2 + (player.y - c.y)**2);
           if (distToPlayer < player.radius + c.radius) {
-            // Collected gold coin successfully!
             c.collected = true;
             synthRef.current?.playCoin();
-
-            // Emit shine sparkles at coin point
             spawnExplosion(c.x, c.y, "#ffd700", 8, 3, 3);
 
-            // Update streak combos
             setCoinsInSession((currentCoins) => {
               const newCoinsCount = currentCoins + 1;
               
@@ -890,7 +833,6 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
 
                 setHighestCombo((h) => Math.max(h, activeMult));
                 
-                // Overlay text alert on combo changes
                 if (activeMult > 1 && nextStreak % 3 === 0) {
                   addFloatingText(c.x, c.y - 12, `COMBO x${activeMult}!`, "#fbbf24", 13);
                 }
@@ -901,62 +843,49 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
               return newCoinsCount;
             });
 
-            // Combo Decay reset countdown
-            comboTimerRef.current = 300; // 5 seconds to get next coin
+            comboTimerRef.current = 300;
 
-            // Apply points with active combos multiplier
             let activeMulti = 1;
             if (combo >= 10) activeMulti = 5;
             else if (combo >= 5) activeMulti = 3;
             else if (combo >= 3) activeMulti = 2;
 
             incrementScore(activeMulti);
-
-            // Remove coin node
             coins.splice(i, 1);
           }
         }
 
-        // Combo timer decay management
         if (comboTimerRef.current > 0) {
           comboTimerRef.current -= 1;
           if (comboTimerRef.current === 0) {
-            setCombo(1); // combo broken!
-            if (onLog) onLog(`[INFO] Combo streak decay timer expired. Multiplier reset.`);
+            setCombo(1);
           }
         }
 
-        // Process obstacles collision checking
+        // Action Pipes
         const pipes = pipesRef.current;
         for (let i = pipes.length - 1; i >= 0; i--) {
           const pipe = pipes[i];
           pipe.x -= activeWorldSpeed;
 
-          // Check passing edge for core scoring
           if (!pipe.passed && pipe.x + pipe.width < player.x) {
             pipe.passed = true;
-            incrementScore(); // passed obstacle safely
+            incrementScore(); 
           }
 
-          // Evaluate Near Miss bonus scores
-          // Trigger proximity bonus if player successfully passes midpoint extremely close to edges!
           if (pipe.passed && !pipe.nearMissTriggered) {
-            // Calculate distance to closest obstacle boundaries
-            const gapClearanceTop = player.y - pipe.topHeight; // spacing above
-            const gapClearanceBottom = pipe.bottomY - player.y; // spacing below
+            const gapClearanceTop = player.y - pipe.topHeight;
+            const gapClearanceBottom = pipe.bottomY - player.y;
             const minimalProximity = Math.min(gapClearanceTop, gapClearanceBottom);
 
-            // If clearance was dangerously close (< player radius + 15px), trigger bonus near miss!
             if (minimalProximity < player.radius + 15 && minimalProximity > 0) {
               pipe.nearMissTriggered = true;
-              incrementScore(2); // reward extra +2 score bonus
+              incrementScore(2);
               addFloatingText(player.x, player.y - 18, "NEAR MISS +2!", "#60a5fa", 13);
               spawnExplosion(player.x, player.y, "#60a5fa", 12, 4, 4);
-              if (onLog) onLog(`[DARING] Near Miss registered! Clearance of just ${Math.round(minimalProximity)}px. Extra pts awarded: +2.`);
             }
           }
 
-          // Crash physics
           const topHit = checkCircleRectOverlap(
             player.x, player.y, player.radius,
             pipe.x, 0, pipe.width, pipe.topHeight
@@ -970,17 +899,16 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
             terminateGame();
           }
 
-          // Remove offscreen columns
           if (pipe.x + pipe.width < -15) {
             pipes.splice(i, 1);
           }
         }
 
-        // Decay active floating texts
+        // Decay texts
         const floatTexts = floatTextsRef.current;
         for (let i = floatTexts.length - 1; i >= 0; i--) {
           const ft = floatTexts[i];
-          ft.y -= 0.8; // drift up
+          ft.y -= 0.8;
           ft.life -= 1;
           if (ft.life <= 0) {
             floatTexts.splice(i, 1);
@@ -988,7 +916,8 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         }
       }
 
-      // Update and decay background particles
+      // 2. OTHER ACTIVE UPDATES
+      // Background particles (Always animate to make screen alive, even in menu!)
       const particles = particlesRef.current;
       for (let i = particles.length - 1; i >= 0; i--) {
         const pt = particles[i];
@@ -1002,96 +931,102 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         }
       }
 
-      // 2. CANVAS RENDERING OPERATIONS
-      ctx.clearRect(0, 0, 400, 600);
-
-      // Camera vibration shake offset when Turbo Active
-      const isTurbo = buffsRef.current.turbo > 0 || buffsRef.current.rainbow > 0;
-      ctx.save();
-      if (isTurbo && currentState === "playing") {
-        const dxRange = Math.random() * 4 - 2;
-        const dyRange = Math.random() * 4 - 2;
-        ctx.translate(dxRange, dyRange);
+      // Add peaceful celestial drift background sparkles if in menu
+      if (currentState === "idle" && Math.random() < 0.08) {
+        particles.push({
+          x: Math.random() * 400,
+          y: Math.random() * 500,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: -Math.random() * 0.6 - 0.1,
+          color: "rgba(56,189,248,0.2)",
+          size: 1 + Math.random() * 3,
+          alpha: 1,
+          life: 100 + Math.floor(Math.random() * 100),
+          maxLife: 200,
+          glow: true
+        });
       }
 
-      // Sky Background (Vignette under Time Slow)
+      // 3. CANVAS RENDERING
+      ctx.clearRect(0, 0, 400, 600);
+
+      const isTurbo = buffsRef.current.turbo > 0 || buffsRef.current.rainbow > 0;
+      ctx.save();
+      if (isTurbo && currentState === "playing" && !isLoopPaused) {
+        ctx.translate(Math.random() * 4 - 2, Math.random() * 4 - 2);
+      }
+
+      // Sky
       if (buffsRef.current.slow_mo > 0) {
-        ctx.fillStyle = "#11221e"; // soft emerald green space vignette
+        ctx.fillStyle = "#11221e"; 
       } else {
-        ctx.fillStyle = "#181c29"; // deep indigo space
+        ctx.fillStyle = "#0c0e18"; 
       }
       ctx.fillRect(0, 0, 400, 600);
 
-      // Parallax Pixel Starfield
-      ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
-      // Back stars move based on frames
-      const parallaxSlow = (frameCounterRef.current * 0.12) % 400;
-      const parallaxFast = (frameCounterRef.current * 0.45) % 400;
+      // Parallax Stars
+      ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+      const starDrift = (frameCounterRef.current * 0.1) % 400;
+      const starDriftFast = (frameCounterRef.current * 0.35) % 400;
 
-      ctx.fillRect((100 - parallaxSlow + 400) % 400, 70, 2, 2);
-      ctx.fillRect((350 - parallaxSlow + 400) % 400, 150, 3, 3);
-      ctx.fillRect((220 - parallaxFast + 400) % 400, 260, 2, 2);
-      ctx.fillRect((50 - parallaxFast + 400) % 400, 390, 2, 2);
-      ctx.fillRect((290 - parallaxSlow + 400) % 400, 440, 3, 3);
+      ctx.fillRect((80 - starDrift + 400) % 400, 60, 2, 2);
+      ctx.fillRect((340 - starDrift + 400) % 400, 140, 2.5, 2.5);
+      ctx.fillRect((210 - starDriftFast + 400) % 400, 250, 1.5, 1.5);
+      ctx.fillRect((40 - starDriftFast + 400) % 400, 380, 2, 2);
+      ctx.fillRect((270 - starDrift + 400) % 400, 430, 3, 3);
 
-      // Semi-transparent background vector cloud shapes
-      ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+      // Clouds
+      ctx.fillStyle = "rgba(255, 255, 255, 0.035)";
       ctx.beginPath();
-      ctx.arc((120 - parallaxSlow + 400) % 400, 120, 30, 0, Math.PI * 2);
-      ctx.arc((150 - parallaxSlow + 400) % 400, 110, 45, 0, Math.PI * 2);
-      ctx.arc((190 - parallaxSlow + 400) % 400, 120, 35, 0, Math.PI * 2);
+      ctx.arc((100 - starDrift + 400) % 400, 130, 25, 0, Math.PI * 2);
+      ctx.arc((135 - starDrift + 400) % 400, 120, 40, 0, Math.PI * 2);
+      ctx.arc((175 - starDrift + 400) % 400, 130, 30, 0, Math.PI * 2);
       ctx.fill();
 
-      // Celestial Moon Node
+      // Moon Node
       ctx.beginPath();
-      ctx.arc(320, 90, 40, 0, Math.PI * 2);
-      ctx.fillStyle = buffsRef.current.slow_mo > 0 ? "#1b2a24" : "#22283a";
+      ctx.arc(320, 90, 32, 0, Math.PI * 2);
+      ctx.fillStyle = buffsRef.current.slow_mo > 0 ? "#1b2a24" : "#1e243a";
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(305, 90, 35, 0, Math.PI * 2);
-      ctx.fillStyle = buffsRef.current.slow_mo > 0 ? "#11221e" : "#181c29";
+      ctx.arc(308, 90, 28, 0, Math.PI * 2);
+      ctx.fillStyle = buffsRef.current.slow_mo > 0 ? "#11221e" : "#0c0e18";
       ctx.fill();
 
-      // Render Active Pipes
+      // Pipes
       pipesRef.current.forEach(p => {
-        // Base cyberpunk coloring options
         let pipeColor = "#2ec4b6";
-        let pipeBorder = "#20897f";
+        let pipeBorder = "#1f8c82";
         
         if (buffsRef.current.slow_mo > 0) {
-          pipeColor = "#10b981"; // neon emerald green green
+          pipeColor = "#10b981"; 
           pipeBorder = "#047857";
         }
 
         ctx.strokeStyle = pipeBorder;
         ctx.lineWidth = 3;
 
-        // Draw top pipeline segment
         ctx.fillStyle = pipeColor;
         ctx.fillRect(p.x, 0, p.width, p.topHeight);
         ctx.strokeRect(p.x, -5, p.width, p.topHeight + 5);
 
-        // Draw bottom pipeline segment
         ctx.fillRect(p.x, p.bottomY, p.width, p.bottomHeight);
         ctx.strokeRect(p.x, p.bottomY, p.width, p.bottomHeight + 5);
 
-        // Pipe rim segments top
         const rimYTop = p.topHeight - 20;
         if (rimYTop >= 0) {
           ctx.fillRect(p.x - 4, rimYTop, p.width + 8, 20);
           ctx.strokeRect(p.x - 4, rimYTop, p.width + 8, 20);
         }
 
-        // Pipe rim segments bottom
         ctx.fillRect(p.x - 4, p.bottomY, p.width + 8, 20);
         ctx.strokeRect(p.x - 4, p.bottomY, p.width + 8, 20);
       });
 
-      // Render Active Coins with animated 3D spin width calculations
+      // Coins
       coinsRef.current.forEach(c => {
         const spinWidth = Math.abs(Math.sin(c.angle)) * c.radius * 2;
-        
         ctx.save();
         ctx.shadowColor = "#f59e0b";
         ctx.shadowBlur = 8;
@@ -1099,13 +1034,11 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.strokeStyle = "#b45309";
         ctx.lineWidth = 1.5;
 
-        // Draw ellipse spinning coin
         ctx.beginPath();
         ctx.ellipse(c.x, c.y, spinWidth / 2, c.radius, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
 
-        // Inner glowing star shape shine
         ctx.fillStyle = "#ffffff";
         ctx.beginPath();
         ctx.arc(c.x, c.y, c.radius * 0.3 * Math.abs(Math.sin(c.angle)), 0, Math.PI * 2);
@@ -1113,24 +1046,20 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.restore();
       });
 
-      // Render Powerup Bubbles in the Sky
+      // Power-ups
       bubblesRef.current.forEach(b => {
         ctx.save();
-        
-        // Pick primary theme color
-        let bubbleColor = "#ffd700"; // gold invincible
+        let bubbleColor = "#ffd700";
         ctx.shadowColor = bubbleColor;
         
-        if (b.type === "turbo") bubbleColor = "#38bdf8"; // cyan-blue
-        if (b.type === "magnet") bubbleColor = "#c084fc"; // purple
-        if (b.type === "slow_mo") bubbleColor = "#4ade80"; // emerald
+        if (b.type === "turbo") bubbleColor = "#38bdf8"; 
+        if (b.type === "magnet") bubbleColor = "#c084fc"; 
+        if (b.type === "slow_mo") bubbleColor = "#4ade80"; 
         if (b.type === "rainbow") {
           bubbleColor = `hsl(${(frameCounterRef.current * 4) % 360}, 100%, 65%)`;
         }
 
         ctx.shadowBlur = 15;
-        
-        // Double concentric glowing outer ring circles
         ctx.strokeStyle = bubbleColor;
         ctx.lineWidth = 2.5;
         ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
@@ -1146,13 +1075,12 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.arc(b.x - 3, b.y - 3, b.radius - 4, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Draw high fidelity icon glyph context inside bubbles
         ctx.fillStyle = bubbleColor;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = "bold 13px Arial";
 
-        let glyph = "🛡️"; // default shield
+        let glyph = "🛡️"; 
         if (b.type === "turbo") glyph = "⚡";
         if (b.type === "magnet") glyph = "🧲";
         if (b.type === "slow_mo") glyph = "⏱️";
@@ -1162,18 +1090,18 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.restore();
       });
 
-      // Draw Ground backplane bottom anchor
-      ctx.fillStyle = "#111422";
+      // Ground backplane
+      ctx.fillStyle = "#0a0c14";
       ctx.fillRect(0, 540, 400, 60);
 
       ctx.beginPath();
       ctx.moveTo(0, 540);
       ctx.lineTo(400, 540);
-      ctx.strokeStyle = buffsRef.current.slow_mo > 0 ? "#10b981" : "#20897f";
+      ctx.strokeStyle = buffsRef.current.slow_mo > 0 ? "#10b981" : "#1f8c82";
       ctx.lineWidth = 4;
       ctx.stroke();
 
-      // Render active particles
+      // Particles
       particlesRef.current.forEach(pt => {
         ctx.save();
         ctx.globalAlpha = pt.alpha;
@@ -1190,10 +1118,10 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.restore();
       });
 
-      // Render Player circle agent
+      // Player
       const p = playerRef.current;
 
-      // Draw ghosts trailing shadow if Turbo speed is active
+      // Ghosts
       tailLocationsRef.current.forEach((loc, index) => {
         ctx.save();
         ctx.globalAlpha = 0.12 * (index + 1);
@@ -1206,8 +1134,8 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
 
       ctx.save();
       
-      // Map cosmetics equipped color
-      let playerFill = "#ff9f43"; // orange
+      // Skin coloring
+      let playerFill = "#ff9f43"; 
       let playerOutline = "#be5014";
       
       if (equippedSkin === "green") {
@@ -1217,34 +1145,31 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         playerFill = "#8b5cf6";
         playerOutline = "#5b21b6";
       } else if (equippedSkin === "gold") {
-        playerFill = "#f59e0b";
+        playerFill = "#fbbf24";
         playerOutline = "#92400e";
       } else if (equippedSkin === "rainbow") {
         playerFill = `hsl(${(frameCounterRef.current * 3.5) % 360}, 100%, 60%)`;
         playerOutline = `hsl(${(frameCounterRef.current * 3.5 + 180) % 360}, 100%, 40%)`;
       }
 
-      // Draw main player base body shadows
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
       ctx.fillStyle = playerOutline;
       ctx.fill();
 
-      // Gleam overlay
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.radius - 2, 0, Math.PI * 2);
       ctx.fillStyle = playerFill;
       ctx.fill();
 
-      // Metallic highlighting
+      // Shine
       ctx.beginPath();
       ctx.arc(p.x - 4, p.y - 4, 4, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(255, 255, 255, 0.48)";
       ctx.fill();
 
-      // Render visual auras around player based on active power-ups
+      // Shield Aura
       if (buffsRef.current.invincible > 0 || buffsRef.current.rainbow > 0) {
-        // GOLDEN pulsing shield rings
         ctx.strokeStyle = `rgba(250, 204, 21, ${0.4 + Math.sin(frameCounterRef.current * 0.15) * 0.25})`;
         ctx.lineWidth = 3.5;
         ctx.beginPath();
@@ -1252,8 +1177,8 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.stroke();
       }
 
+      // Magnet Aura
       if (buffsRef.current.magnet > 0 || buffsRef.current.rainbow > 0) {
-        // Purple electric magnetism waves
         ctx.strokeStyle = `rgba(168, 85, 247, ${0.3 + Math.sin(frameCounterRef.current * 0.1) * 0.15})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -1261,8 +1186,8 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.stroke();
       }
 
+      // Turbo Flame Thrusters
       if (buffsRef.current.turbo > 0 || buffsRef.current.rainbow > 0) {
-        // Blue electric propulsion jet streams
         ctx.strokeStyle = "rgba(56, 189, 248, 0.5)";
         ctx.lineWidth = 3;
         ctx.beginPath();
@@ -1273,7 +1198,7 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
 
       ctx.restore();
 
-      // Render static text labels and logs bubbles
+      // Floating Texts
       floatTextsRef.current.forEach(ft => {
         ctx.save();
         ctx.globalAlpha = ft.life / ft.maxLife;
@@ -1281,7 +1206,6 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.fillStyle = ft.color;
         ctx.textAlign = "center";
         
-        // Solid black outline drop shadows for superior contrast
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = 3;
         ctx.strokeText(ft.text, ft.x, ft.y);
@@ -1289,302 +1213,304 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         ctx.restore();
       });
 
-      // 3. STATIC CANVAS STATE TEXTS
+      // Shade backdrop overlay on Menu modes
       if (currentState === "idle") {
-        ctx.fillStyle = "rgba(10, 12, 18, 0.4)";
+        ctx.fillStyle = "rgba(6, 8, 16, 0.35)";
         ctx.fillRect(0, 0, 400, 600);
       }
 
-      ctx.restore(); // restore camera offsets
+      ctx.restore(); 
       animationId = requestAnimationFrame(gameLoop);
     };
 
     animationId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animationId);
-  }, [gameState, equippedSkin, unlockedSkins, coinsInSession, activeBuffsList]);
+  }, [gameState, equippedSkin, unlockedSkins, coinsInSession, activeBuffsList, isPaused]);
 
   return (
-    <div className="flex flex-col items-center w-full">
+    <div className="flex flex-col items-center w-full max-w-md relative select-none">
       
-      {/* Keyboard alert notification banner */}
-      {isKeyboardAlertVisible && (
-        <div className="w-full max-w-[400px] bg-[#1e1e1e] border border-[#3c3c3c] text-xs text-slate-300 p-2.5 rounded mb-3 flex items-start gap-2 justify-between">
-          <div className="flex gap-2">
-            <Info className="w-4 h-4 text-[#007acc] shrink-0 mt-0.5" />
-            <span>
-              <strong>Pygame Keybinds Active:</strong> Use <kbd className="px-1 py-0.5 bg-[#333333] rounded border border-[#444] text-white text-[10px]">SPACE</kbd> or <kbd className="px-1 py-0.5 bg-[#333333] rounded border border-[#444] text-white text-[10px]">ARROW-UP</kbd> to flap or play, and <kbd className="px-1 py-0.5 bg-[#333333] rounded border border-[#444] text-white text-[10px]">R</kbd> to quick-start inside game over.
-            </span>
-          </div>
-          <button 
-            onClick={() => setIsKeyboardAlertVisible(false)} 
-            className="text-slate-500 hover:text-white font-bold shrink-0 ml-1 px-1"
-          >
-            ×
-          </button>
-        </div>
-      )}
+      {/* Dynamic Sound Mute Trigger (Always accessible at top-right or top-left corners) */}
+      <div className="absolute top-[-3.5rem] right-0 flex items-center gap-2 z-30">
+        <button
+          onClick={() => setIsMuted(prev => !prev)}
+          className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-gray-300 border border-slate-700/60 shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+          title={isMuted ? "Unmute sounds" : "Mute sounds"}
+        >
+          {isMuted ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+        </button>
+      </div>
 
-      {/* Primary Simulator Screen Box Frame */}
+      {/* Primary Mobile-App Aspect Screen Frame Block */}
       <div 
         ref={containerRef}
-        id="pygame-screen"
+        id="game-viewport-frame"
         onClick={triggerJump}
-        className="relative select-none cursor-pointer overflow-hidden rounded-2xl shadow-2xl border-4 border-[#0e0e0e] bg-slate-900 group"
-        style={{ width: "400px", height: "600px" }}
+        className="relative overflow-hidden rounded-[2.5rem] shadow-2xl border-8 border-slate-950 bg-slate-950 select-none cursor-pointer flex flex-col justify-between"
+        style={{ width: "100%", aspectRatio: "2/3" }}
       >
         <canvas
           ref={canvasRef}
           width={400}
           height={600}
-          className="absolute inset-0 block w-full h-full"
+          className="absolute inset-0 block w-full h-full object-cover rounded-[1.8rem] z-0 pointer-events-none"
         />
 
-        {/* Vintage scan lines overlay filter */}
-        <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.15)_50%)] bg-[length:100%_4px]" />
+        {/* Vintage glass glare filter */}
+        <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/5 via-slate-950/0 to-slate-950/40 z-10 rounded-[1.8rem]" />
 
         {/* ==========================================
-            HUD ACTIVE GAMEPLAY LAYER
+            HUD SCREEN OVERLAY: PLAY STATE ACTIVE
             ========================================== */}
         {gameState === "playing" && (
-          <div className="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between z-10 text-sans select-none">
+          <div className="absolute inset-0 pointer-events-none p-5 flex flex-col justify-between z-20 select-none">
             
-            {/* Top HUD Row containing Streak Combos, Center score, and Coins */}
-            <div className="flex items-start justify-between w-full h-16">
-              
-              {/* Combo Streak Indicator on the Left */}
-              <div className="flex flex-col gap-1 transition-all duration-200">
-                {combo > 1 && (
-                  <div className="flex items-center gap-1 bg-[#fbbf24]/95 border border-[#d97706] text-slate-950 font-bold px-2 py-1 rounded shadow-md animate-bounce">
-                    <Flame className="w-4 h-4 fill-amber-500" />
-                    <span className="text-xs font-black">COMBO x{combo >= 10 ? 5 : combo >= 5 ? 3 : 2}</span>
-                  </div>
-                )}
-                {combo > 1 && (
-                  <div className="w-16 h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-amber-400 h-full transition-all duration-100 ease-linear"
-                      style={{ width: `${(comboTimerRef.current / 300) * 100}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Large centered arcade points score */}
-              <div className="flex flex-col items-center">
-                <span className="text-4xl font-black text-white hover:scale-105 transition-transform drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)] font-mono">
-                  {score}
-                </span>
+            {/* Top HUD Section */}
+            <div className="flex flex-col gap-1 w-full">
+              <div className="flex items-center justify-between w-full">
                 
-                {/* Active environmental difficulty badge */}
-                <div className="mt-1 bg-slate-950/80 px-1.5 py-0.5 rounded border border-[#3c3c3c] text-[8px] font-bold text-gray-400 uppercase tracking-widest">
-                  TIER {Math.floor(score / 10) + 1} Environment
+                {/* Top Left: Personal Best Score Badge */}
+                <div className="flex items-center gap-1.5 bg-slate-950/70 border border-slate-800 rounded-2xl px-3 py-1.5 shadow-md">
+                  <Trophy className="w-3.5 h-3.5 text-amber-400 fill-amber-500/20" />
+                  <span className="text-[10px] text-gray-400 font-bold tracking-wider mr-1">BEST:</span>
+                  <span className="text-xs font-black text-amber-400 font-mono">{bestScore}</span>
+                </div>
+
+                {/* Top Right: Sound/Pause Controller */}
+                <div className="flex gap-2 pointer-events-auto">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setIsPaused(prev => !prev); }}
+                    className="p-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-900 border border-slate-800 text-gray-300 transition-all active:scale-90"
+                    title={isPaused ? "Resume game" : "Pause game"}
+                  >
+                    {isPaused ? <Play className="w-4 h-4 fill-emerald-500 text-emerald-500" /> : <span className="text-xs font-black px-1 font-mono">||</span>}
+                  </button>
                 </div>
               </div>
 
-              {/* Coin collection display box */}
-              <div className="flex items-center gap-1.5 bg-slate-950/80 border border-[#ffd700]/30 px-2 py-1 rounded shadow text-amber-400 font-bold text-xs select-none">
-                <Coins className="w-3.5 h-3.5 text-[#ffd700] animate-pulse" />
-                <span className="font-mono text-[13px]">{coinsInSession}</span>
+              {/* Top Center Layout: CURRENT SCORE + POWERUP PROGRESS */}
+              <div className="mt-3 flex flex-col items-center justify-center w-full">
+                {/* Dynamic animated points score scale */}
+                <div className="text-5xl font-black text-white px-6 py-1 select-none font-sans drop-shadow-[0_4px_8px_rgba(0,0,0,0.85)] animate-fade-in flex flex-col items-center">
+                  <span>{score}</span>
+                </div>
+
+                {/* Coins collection live meter below score */}
+                <div className="mt-1 flex items-center gap-1.5 bg-slate-950/60 border border-slate-800/40 px-3 py-1 rounded-full text-amber-400 font-black text-xs shadow-inner">
+                  <Coins className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="font-mono text-[13px]">{coinsInSession}</span>
+                </div>
+
+                {/* Active Multiplier Streak combo alerts */}
+                {combo > 1 && (
+                  <div className="mt-2.5 flex items-center gap-1 bg-amber-400 text-slate-950 font-black px-2.5 py-1 rounded-full shadow-lg border border-amber-500 text-[10px] animate-bounce">
+                    <Flame className="w-3.5 h-3.5 fill-amber-600" />
+                    <span>COMBO x{combo >= 10 ? 5 : combo >= 5 ? 3 : 2}!</span>
+                  </div>
+                )}
+
+                {/* Clean inline power-up countdown timers - Exactly Below Score inside canvas HUD! */}
+                {activeBuffsList.length > 0 && (
+                  <div className="w-full max-w-[200px] mt-4 flex flex-col gap-1.5 pointer-events-auto">
+                    {activeBuffsList.map((buff) => {
+                      let color = "bg-yellow-400";
+                      let icon = "🛡️";
+                      if (buff.type === "turbo") { color = "bg-sky-400 animate-pulse"; icon = "⚡"; }
+                      if (buff.type === "magnet") { color = "bg-purple-400"; icon = "🧲"; }
+                      if (buff.type === "slow_mo") { color = "bg-emerald-400"; icon = "⏱️"; }
+                      if (buff.type === "rainbow") { color = "bg-gradient-to-r from-pink-500 via-sky-400 to-amber-300"; icon = "🌟"; }
+
+                      const widthPercent = (buff.remaining / buff.maxDuration) * 100;
+
+                      return (
+                        <div key={buff.type} className="w-full bg-slate-950/80 rounded-full border border-slate-800/50 p-1 flex items-center gap-2">
+                          <span className="text-[10px] pl-1.5">{icon}</span>
+                          <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden mr-1">
+                            <div 
+                              className={`h-full ${color} rounded-full transition-all duration-100 ease-linear`}
+                              style={{ width: `${widthPercent}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Bottom Screen interactive indicators overlay */}
-            <div className="flex items-center justify-between w-full opacity-60 hover:opacity-100 transition-opacity">
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950/95 border border-[#3c3c3c] text-[9px] text-[#007acc] font-mono">
-                <CircleDot className="w-2.5 h-2.5 animate-pulse" />
-                <span>ACTIVE SIMULATOR</span>
-              </div>
-              <span className="text-[9px] font-mono text-gray-500 bg-slate-950/80 px-1 rounded">60 FPS BOUND</span>
+            {/* Bottom HUD: Tap message */}
+            <div className="w-full flex justify-center text-[10px] text-gray-500 font-mono tracking-widest text-center animate-pulse">
+              TAP OR SPACE TO FLAP
             </div>
           </div>
         )}
 
         {/* ==========================================
-            START / IDLE MENU SCREEN LAYER (React UI Overlayed)
+            HUD PAUSED STATE OVERLAY
+            ========================================== */}
+        {isPaused && gameState === "playing" && (
+          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm p-6 flex flex-col justify-center items-center z-25" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 w-full max-w-[280px] text-center shadow-2xl animate-scale-in">
+              <span className="w-10 h-10 rounded-full bg-[#2ec4b6]/10 text-[#2ec4b6] border border-[#2ec4b6]/20 flex items-center justify-center mx-auto mb-2 font-black tracking-widest text-sm">
+                ||
+              </span>
+              <h3 className="text-xl font-bold text-white uppercase tracking-tight">Game Paused</h3>
+              <p className="text-xs text-gray-500 mt-1">Ready to jump back into action?</p>
+
+              <button 
+                onClick={() => setIsPaused(false)}
+                className="w-full mt-5 py-3 rounded-2xl bg-[#2ec4b6] hover:bg-[#20897f] active:scale-95 transition-all text-slate-950 font-black text-xs tracking-wider cursor-pointer"
+              >
+                RESUME PLAYGAME
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ==========================================
+            MAIN MENU / IDLE OVERLAY
             ========================================== */}
         {gameState === "idle" && (
-          <div className="absolute inset-0 bg-slate-950/80 p-6 flex flex-col justify-between items-center select-none text-center z-10" onClick={(e) => e.stopPropagation()}>
-            <div className="mt-8 flex flex-col items-center gap-2">
-              {/* Colorful icon launcher */}
-              <div className="w-12 h-12 rounded-2xl bg-[#007acc] flex items-center justify-center shadow-lg border border-sky-400 animate-pulse">
-                <Compass className="w-7 h-7 text-white" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0c0e18]/80 to-[#07080f]/95 p-6 flex flex-col justify-between items-center z-20" onClick={(e) => e.stopPropagation()}>
+            
+            {/* Top Vault Header Row: Personal best & Coins */}
+            <div className="w-full flex items-center justify-between mt-4">
+              {/* PB Trophy */}
+              <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-1.5 shadow">
+                <Trophy className="w-3.5 h-3.5 text-amber-400 fill-amber-500/20" />
+                <span className="text-[9px] text-gray-400 font-bold uppercase mr-0.5">PEAK:</span>
+                <span className="text-xs font-black text-amber-400 font-mono">{bestScore}</span>
               </div>
               
-              <h1 className="text-2xl font-black tracking-tight text-white mt-1 drop-shadow-sm font-sans uppercase">
-                Pygame Flappy Bubble
+              {/* Gold Coins Bank Vault */}
+              <div className="flex items-center gap-1.5 bg-slate-905 border border-amber-500/35 rounded-xl px-3 py-1.5 text-amber-400 font-bold text-xs shadow">
+                <Coins className="w-3.5 h-3.5 text-[#ffd700] animate-pulse" />
+                <span className="font-mono text-sm">{totalCoins}</span>
+              </div>
+            </div>
+
+            {/* Centered Premium Game Logo & Animated sphere illustration */}
+            <div className="flex flex-col items-center gap-2 max-w-[280px]">
+              
+              {/* Glowing Interactive Bouncing Sphere Bubble illustration */}
+              <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#ff9f43] to-[#fbbf24] shadow-lg border-2 border-white/40 flex items-center justify-center relative animate-bounce duration-[1500ms]">
+                <div className="absolute top-2.5 left-2.5 w-4 h-4 rounded-full bg-white/45" />
+                <Sparkles className="w-6 h-6 text-white stroke-1" />
+              </div>
+              
+              <h1 className="text-3xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-teal-400 via-sky-400 to-indigo-400 mt-2 hover:scale-105 transition-transform duration-300 select-none">
+                FLAPPY BUBBLE
               </h1>
-              <p className="text-[11px] text-gray-400 font-mono tracking-wide max-w-[280px]">
-                Enhanced Mobile Edition Simulator featuring floating power-up cores, shiny coin multi-combos, and near-miss bonuses.
+              <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">
+                CORES ADVENTURE
               </p>
             </div>
 
-            {/* Customized Cosmetics selector area inside Launcher */}
-            <div className="bg-[#24252a]/95 border border-[#3c3c3c] w-full max-w-[320px] p-3 rounded-xl flex flex-col gap-2">
-              <div className="flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase pb-1 border-b border-[#3c3c3c]">
-                <span>SELECT COSMETIC SPHERE</span>
-                <span className="text-amber-400 flex items-center gap-0.5 font-mono">
-                  <Coins className="w-3 h-3" />
-                  {totalCoins}
-                </span>
-              </div>
+            {/* Large Bouncing Interactive Play Button & Action grid */}
+            <div className="w-full max-w-[290px] flex flex-col gap-3 mb-6">
               
-              <div className="flex gap-1.5 justify-center py-1">
-                {/* Orange */}
+              {/* Primary Pulsating Giant Play Action */}
+              <button 
+                onClick={triggerJump}
+                className="w-full py-4.5 rounded-2xl bg-gradient-to-r from-[#2ec4b6] to-[#38bdf8] hover:brightness-110 active:scale-95 transition-all text-slate-950 font-black text-sm tracking-widest shadow-[0_0_20px_rgba(46,196,182,0.4)] border border-sky-300 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Play className="w-4.5 h-4.5 fill-slate-950" />
+                <span>START RUN GAME</span>
+              </button>
+
+              {/* Secondary grids: Shop + Settings */}
+              <div className="grid grid-cols-2 gap-3">
                 <button 
-                  onClick={() => equipSkin("orange")}
-                  className={`w-8 h-8 rounded-full bg-[#ff9f43] border-2 transition-all ${equippedSkin === "orange" ? "border-white scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"}`}
-                  title="Orange Skin"
-                />
-                
-                {/* Green */}
-                {unlockedSkins.includes("green") ? (
-                  <button 
-                    onClick={() => equipSkin("green")}
-                    className={`w-8 h-8 rounded-full bg-[#10b981] border-2 transition-all ${equippedSkin === "green" ? "border-white scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"}`}
-                  />
-                ) : (
-                  <button 
-                    onClick={() => buySkin("green", 25)}
-                    className="w-8 h-8 rounded-full bg-[#10b981]/20 border border-[#10b981]/40 text-[9px] font-bold text-emerald-400 flex items-center justify-center hover:bg-[#10b981]/30"
-                    title="Unlock Green: 25 Coins"
-                  >
-                    25
-                  </button>
-                )}
+                  onClick={() => setIsShopOpen(true)}
+                  className="py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-350 font-black text-xs tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-800 active:scale-95 transition-all"
+                >
+                  <ShoppingBag className="w-4 h-4 text-amber-500" />
+                  <span>SKINS SHOP</span>
+                </button>
 
-                {/* Purple */}
-                {unlockedSkins.includes("purple") ? (
-                  <button 
-                    onClick={() => equipSkin("purple")}
-                    className={`w-8 h-8 rounded-full bg-[#8b5cf6] border-2 transition-all ${equippedSkin === "purple" ? "border-white scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"}`}
-                  />
-                ) : (
-                  <button 
-                    onClick={() => buySkin("purple", 50)}
-                    className="w-8 h-8 rounded-full bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 text-[9px] font-bold text-purple-400 flex items-center justify-center hover:bg-[#8b5cf6]/30"
-                    title="Unlock Purple: 50 Coins"
-                  >
-                    50
-                  </button>
-                )}
-
-                {/* Gold */}
-                {unlockedSkins.includes("gold") ? (
-                  <button 
-                    onClick={() => equipSkin("gold")}
-                    className={`w-8 h-8 rounded-full bg-[#fbbf24] border-2 transition-all ${equippedSkin === "gold" ? "border-white scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"}`}
-                  />
-                ) : (
-                  <button 
-                    onClick={() => buySkin("gold", 100)}
-                    className="w-8 h-8 rounded-full bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[9px] font-bold text-amber-300 flex items-center justify-center hover:bg-[#fbbf24]/30"
-                    title="Unlock Gold: 100 Coins"
-                  >
-                    100
-                  </button>
-                )}
-
-                {/* Rainbow */}
-                {unlockedSkins.includes("rainbow") ? (
-                  <button 
-                    onClick={() => equipSkin("rainbow")}
-                    className={`w-8 h-8 rounded-full bg-gradient-to-tr from-rose-500 via-emerald-500 to-sky-500 border-2 transition-all ${equippedSkin === "rainbow" ? "border-white scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"}`}
-                  />
-                ) : (
-                  <button 
-                    onClick={() => buySkin("rainbow", 150)}
-                    className="w-8 h-8 rounded-full bg-slate-800 border border-pink-400/40 text-[8px] font-bold text-pink-300 flex items-center justify-center hover:bg-slate-700"
-                    title="Unlock Rainbow: 150 Coins"
-                  >
-                    150
-                  </button>
-                )}
+                <button 
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-350 font-black text-xs tracking-wider flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-800 active:scale-95 transition-all"
+                >
+                  <Settings className="w-4 h-4 text-indigo-400" />
+                  <span>SETTINGS</span>
+                </button>
               </div>
-              <div className="text-[9px] text-gray-500 font-sans tracking-wide">
-                Coins persist securely across matches. Click lock-badges to spend savings!
-              </div>
+
             </div>
-
-            {/* Tap Launcher Play button */}
-            <button 
-              onClick={triggerJump}
-              className="py-3 px-8 rounded-full bg-[#007acc] hover:bg-sky-600 active:scale-95 transition-all text-white font-bold text-sm tracking-wide shadow-lg border border-sky-400 flex items-center gap-2 cursor-pointer mb-6"
-            >
-              <Play className="w-4 h-4 fill-white" />
-              <span>TAP TO LAUNCH SIMULATOR</span>
-            </button>
           </div>
         )}
 
         {/* ==========================================
-            GAME OVER OVERLAY LAYER (Responsive Retro Modal UI)
+            GAME OVER OVERLAY LAYER
             ========================================== */}
         {gameState === "game_over" && (
-          <div className="absolute inset-0 bg-slate-950/90 p-5 flex flex-col justify-between items-center z-10 select-none text-sans text-center" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 bg-slate-950/95 p-6 flex flex-col justify-between items-center z-20" onClick={(e) => e.stopPropagation()}>
             
-            {/* Modal Header */}
-            <div className="mt-4 flex flex-col items-center">
-              <span className="text-xs bg-rose-500/20 border border-rose-500/40 text-rose-400 font-bold px-2 py-0.5 rounded tracking-widest uppercase">
-                Simulation Crumpled
+            {/* Crash Warning Header */}
+            <div className="mt-6 flex flex-col items-center select-none text-center">
+              <span className="text-[10px] bg-rose-500/10 border border-rose-500/20 text-rose-400 font-bold px-2.5 py-1 rounded-full tracking-widest uppercase">
+                REACTOR CRASHED
               </span>
-              <h2 className="text-3xl font-black text-rose-500 mt-1 uppercase tracking-tight">
+              <h2 className="text-3xl font-black text-rose-500 mt-2 uppercase tracking-tight">
                 Game Over
               </h2>
             </div>
 
-            {/* High density statistics table card */}
-            <div className="w-full max-w-[310px] bg-[#1a1b24]/95 border border-[#3c3c3c] rounded-xl p-4 flex flex-col gap-3 shadow-2xl animate-fade-in">
-              <div className="flex justify-between items-center border-b border-[#3c3c3c] pb-1.5 text-xs text-gray-400 font-bold uppercase">
-                <span>Final Mission Logs</span>
-                <span className="text-[#007acc] font-mono">PYB_01</span>
+            {/* Pristine Commercial Mobile App Stats Cards */}
+            <div className="w-full max-w-[300px] bg-slate-900/70 border border-slate-800 rounded-3xl p-5 flex flex-col gap-4 shadow-xl">
+              <div className="flex justify-between items-center border-b border-slate-850 pb-2 text-[10px] text-gray-500 font-bold uppercase tracking-wide">
+                <span>Final Mission Summary</span>
+                <span className="text-indigo-400 font-mono">ST_99</span>
               </div>
               
-              <div className="grid grid-cols-2 gap-3.5 pt-0.5 text-left">
+              <div className="grid grid-cols-2 gap-4 text-left">
                 {/* Score */}
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">Total Score</span>
-                  <span className="text-xl font-bold text-white font-mono">{score}</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Final Score</span>
+                  <span className="text-2xl font-black text-white font-mono">{score}</span>
                 </div>
                 {/* Best Score */}
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">Personal Peak</span>
-                  <span className="text-xl font-bold text-amber-400 font-mono">{bestScore}</span>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">High Peak</span>
+                  <span className="text-2xl font-black text-amber-400 font-mono">{bestScore}</span>
                 </div>
                 {/* Coins Collected */}
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">Coins Collected</span>
-                  <span className="text-base font-semibold text-amber-300 font-mono flex items-center gap-1">
-                    <Coins className="w-3.5 h-3.5 text-[#ffd700]" />
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Coins Gained</span>
+                  <span className="text-lg font-bold text-amber-300 font-mono flex items-center gap-0.5">
+                    <Coins className="w-4 h-4 text-amber-400" />
                     +{coinsInSession}
                   </span>
                 </div>
                 {/* Combo Peak */}
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">Max Combo Multiplier</span>
-                  <span className="text-base font-semibold text-[#60a5fa] font-mono">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Max Multiplier</span>
+                  <span className="text-lg font-bold text-[#38bdf8] font-mono">
                     x{highestCombo}
                   </span>
                 </div>
                 {/* Powerups Gained */}
-                <div className="flex flex-col col-span-2">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">Bubble Powerups Captured</span>
-                  <span className="text-xs font-medium text-purple-300 font-mono">
-                    {powerupsCollected} core bubbles popped
+                <div className="flex flex-col col-span-2 border-t border-slate-850 pt-3">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Bubble Cores Popped</span>
+                  <span className="text-xs font-semibold text-purple-300 font-mono mt-0.5">
+                    {powerupsCollected} active bubble powers gained
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Cosmetics Customization Quick mini Drawer */}
-            <div className="w-full max-w-[310px] bg-[#24252a]/95 border border-[#3c3c3c] p-2 rounded-lg flex flex-col gap-1.5">
-              <div className="flex justify-between items-center text-[9px] text-gray-400 font-bold uppercase pb-1 border-b border-[#3c3c3c]">
-                <span>FAST SHOP / EQUIPPED</span>
-                <span className="text-amber-400 font-mono flex items-center gap-0.5">
+            {/* Quick Fast Skin Customizer */}
+            <div className="w-full max-w-[300px] bg-slate-900/40 p-2.5 rounded-2xl border border-slate-800 flex flex-col gap-1.5 select-none">
+              <div className="flex justify-between items-center text-[9px] text-gray-500 font-bold uppercase px-1">
+                <span>Equip Skin</span>
+                <span className="text-amber-400 font-mono flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5">
                   <Coins className="w-2.5 h-2.5" />
                   {totalCoins}
                 </span>
               </div>
-              <div className="flex gap-1.5 justify-center py-0.5">
+              <div className="flex gap-2 justify-center py-1">
                 {["orange", "green", "purple", "gold", "rainbow"].map((s) => {
                   const isUnlocked = unlockedSkins.includes(s);
                   let clr = "bg-[#ff9f43]";
@@ -1597,9 +1523,9 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
                     <button 
                       key={s}
                       onClick={() => isUnlocked ? equipSkin(s) : buySkin(s, s === "green" ? 25 : s === "purple" ? 50 : s === "gold" ? 100 : 150)}
-                      className={`w-6 h-6 rounded-full ${clr} border transition-all text-[8px] flex items-center justify-center font-bold text-white ${equippedSkin === s ? "border-white scale-110 shadow-md" : "border-transparent opacity-60 hover:opacity-100"}`}
+                      className={`w-7 h-7 rounded-full ${clr} border transition-all text-[8px] flex items-center justify-center font-bold text-white relative hover:scale-105 ${equippedSkin === s ? "border-white ring-2 ring-indigo-500/40 scale-110 shadow-lg" : "border-transparent opacity-65 hover:opacity-100"}`}
                     >
-                      {!isUnlocked && "🔒"}
+                      {!isUnlocked && <span className="absolute text-[8px] bottom-[-2px] right-[-2px]">🔒</span>}
                     </button>
                   );
                 })}
@@ -1607,29 +1533,29 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
             </div>
 
             {/* Action buttons list */}
-            <div className="w-full max-w-[310px] flex flex-col gap-2 mb-4">
+            <div className="w-full max-w-[300px] flex flex-col gap-2.5 mb-6">
               <button 
                 onClick={restartAction}
-                className="w-full py-2.5 rounded bg-[#007acc] hover:bg-sky-600 transition-colors text-white font-bold text-xs tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow"
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#2ec4b6] to-[#38bdf8] hover:brightness-110 transition-colors text-slate-950 font-black text-xs tracking-widest flex items-center justify-center gap-2 cursor-pointer shadow-lg"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3.5 h-3.5 text-slate-950 stroke-[3]" />
                 <span>PLAY AGAIN</span>
               </button>
               
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <button 
                   onClick={() => setGameState("idle")}
-                  className="py-2.5 rounded bg-[#333333] hover:bg-[#444] transition-colors text-slate-300 font-semibold text-xs tracking-wider flex items-center justify-center gap-1 cursor-pointer border border-[#3c3c3c]"
+                  className="py-3 rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors text-slate-300 font-bold text-xs tracking-wider flex items-center justify-center gap-1 cursor-pointer border border-slate-800"
                 >
-                  <Home className="w-3 h-3" />
+                  <Home className="w-4 h-4 text-gray-400" />
                   <span>MAIN MENU</span>
                 </button>
                 <button 
-                  onClick={() => setIsShopOpen(!isShopOpen)}
-                  className="py-2.5 rounded bg-amber-500/20 hover:bg-amber-500/35 transition-all text-amber-300 font-semibold text-xs tracking-wider flex items-center justify-center gap-1 cursor-pointer border border-amber-500/40"
+                  onClick={() => setIsShopOpen(true)}
+                  className="py-3 rounded-xl bg-slate-900 hover:bg-slate-800 transition-all text-slate-300 font-bold text-xs tracking-wider flex items-center justify-center gap-1 cursor-pointer border border-slate-800"
                 >
-                  <ShoppingBag className="w-3 h-3 text-amber-400" />
-                  <span>COSMETIC SHOP</span>
+                  <ShoppingBag className="w-4 h-4 text-amber-500" />
+                  <span>SKINS SHOP</span>
                 </button>
               </div>
             </div>
@@ -1637,53 +1563,53 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
         )}
 
         {/* ==========================================
-            MOCK FULL CUSTOMIZATION SHOP DIALOG OVERLAY
+            COSMETIC SHOP OVERLAY DIALOG
             ========================================== */}
         {isShopOpen && (
-          <div className="absolute inset-0 bg-slate-950/95 p-6 flex flex-col justify-between items-center z-20 select-none text-sans" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 bg-slate-950/98 p-6 flex flex-col justify-between items-center z-30 animate-fade-in" onClick={(e) => e.stopPropagation()}>
             
-            <div className="w-full flex items-center justify-between border-b border-[#3c3c3c] pb-2">
-              <span className="text-xs font-bold text-amber-400 flex items-center gap-1 uppercase">
-                <ShoppingBag className="w-4 h-4 text-amber-500" />
-                <span>COSMETICS LABS</span>
+            <div className="w-full flex items-center justify-between border-b border-slate-850 pb-3 mt-4">
+              <span className="text-xs font-black text-amber-400 flex items-center gap-1 uppercase tracking-wider">
+                <ShoppingBag className="w-4 h-4 text-amber-500 animate-bounce" />
+                <span>COSMETIC SKINS</span>
               </span>
-              <span className="bg-slate-900 border border-[#3c3c3c] rounded px-2 py-0.5 text-[11px] font-bold font-mono text-amber-400 flex items-center gap-1">
-                <Coins className="w-3 h-3" />
+              <span className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1 text-xs font-bold text-amber-400 flex items-center gap-1 shadow-inner">
+                <Coins className="w-3.5 h-3.5 text-amber-400" />
                 {totalCoins} COINS
               </span>
             </div>
 
             {/* Skins Listing Row Grid */}
-            <div className="flex-1 overflow-y-auto w-full py-4 space-y-2 max-h-[380px] pr-1">
+            <div className="flex-1 overflow-y-auto w-full py-4 space-y-3 max-h-[360px] pr-1 mt-1 scrollbar-thin">
               {[
-                { id: "orange", name: "Standard Orange", cost: 0, color: "bg-[#ff9f43]", d: "Standard issue spherical rocket test chassis." },
-                { id: "green", name: "Emerald Cyber", cost: 25, color: "bg-[#10b981]", d: "Upgraded carbon composite matrix shield casing." },
-                { id: "purple", name: "Proton Pulsar", cost: 50, color: "bg-[#8b5cf6]", d: "Magnetic gravity engine shell equipped with hyperdrive vents." },
-                { id: "gold", name: "Sunfire Gold", cost: 100, color: "bg-[#fbbf24]", d: "Gilded structural composite. Radiates luxury streaks." },
-                { id: "rainbow", name: "Rainbow Spectrum", cost: 150, color: "bg-gradient-to-tr from-pink-500 via-sky-500 to-amber-500", d: "Highly experimental prism reactor shell. Cycles full spectrum colors." },
+                { id: "orange", name: "Classic Orange", cost: 0, color: "bg-[#ff9f43]", d: "Standard issue spherical bubble frame." },
+                { id: "green", name: "Emerald Cyber", cost: 25, color: "bg-[#10b981]", d: "Carbon composition matrix shell shield." },
+                { id: "purple", name: "Nebula Pulsar", cost: 50, color: "bg-[#8b5cf6]", d: "Gravity engine core fitted with pulsar exhaust." },
+                { id: "gold", name: "Luxe Gilded", cost: 100, color: "bg-[#fbbf24]", d: "Pure golden composite casing shines premium sparks." },
+                { id: "rainbow", name: "Rainbow Spectrum", cost: 150, color: "bg-gradient-to-tr from-rose-500 via-sky-400 to-amber-300", d: "Experimental spectrum reactor shell with speed trails." },
               ].map((skin) => {
                 const isUnlocked = unlockedSkins.includes(skin.id);
                 const isEquipped = equippedSkin === skin.id;
 
                 return (
-                  <div key={skin.id} className="bg-slate-900/60 border border-[#3c3c3c] rounded-xl p-2.5 flex items-center gap-3 justify-between">
+                  <div key={skin.id} className="bg-slate-900 border border-slate-850 rounded-2xl p-3 flex items-center gap-3 justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className={`w-8 h-8 rounded-full ${skin.color} shadow-inner border border-white/20`} />
+                      <div className={`w-9 h-9 rounded-full ${skin.color} shadow-inner border border-white/20`} />
                       <div className="flex flex-col text-left">
-                        <span className="text-xs font-bold text-white capitalize">{skin.name}</span>
-                        <p className="text-[9px] text-gray-500 leading-tight max-w-[150px]">{skin.d}</p>
+                        <span className="text-xs font-extrabold text-white capitalize">{skin.name}</span>
+                        <p className="text-[9.5px] text-gray-500 leading-tight max-w-[140px] mt-0.5">{skin.d}</p>
                       </div>
                     </div>
                     
                     <div>
                       {isEquipped ? (
-                        <span className="text-[9px] bg-sky-500/10 border border-sky-500/40 text-sky-400 px-2 py-1 rounded font-bold uppercase">
+                        <span className="text-[9px] bg-indigo-500/10 border border-indigo-500/40 text-indigo-400 px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
                           Armed
                         </span>
                       ) : isUnlocked ? (
                         <button 
                           onClick={() => equipSkin(skin.id)}
-                          className="bg-[#333333] hover:bg-[#444] text-[9px] text-white font-bold px-2.5 py-1 rounded cursor-pointer transition-colors border border-[#3c3c3c]"
+                          className="bg-[#24252a] hover:bg-slate-805 text-[10px] text-white font-extrabold px-3 py-1.5 rounded-xl cursor-pointer transition-colors border border-slate-800"
                         >
                           EQUIP
                         </button>
@@ -1691,9 +1617,9 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
                         <button 
                           onClick={() => buySkin(skin.id, skin.cost)}
                           disabled={totalCoins < skin.cost}
-                          className={`flex items-center gap-1 border text-[9px] font-bold px-2 py-1 rounded transition-colors cursor-pointer ${totalCoins >= skin.cost ? "bg-amber-500/20 border-amber-500 hover:bg-amber-500 text-amber-400 hover:text-slate-900" : "bg-slate-900 border-gray-800 text-gray-600 cursor-not-allowed"}`}
+                          className={`flex items-center gap-1 border text-[10px] font-black px-2.5 py-1.5 rounded-xl transition-colors cursor-pointer ${totalCoins >= skin.cost ? "bg-amber-500 text-slate-950 border-amber-400 hover:brightness-110" : "bg-slate-950 border-slate-900 text-gray-600 cursor-not-allowed"}`}
                         >
-                          <Coins className="w-2.5 h-2.5" />
+                          <Coins className="w-3 h-3" />
                           <span>BUY {skin.cost}</span>
                         </button>
                       )}
@@ -1706,117 +1632,92 @@ export const PygameSimulator: React.FC<PygameSimulatorProps> = ({ config, onScor
             {/* Back action */}
             <button 
               onClick={() => setIsShopOpen(false)}
-              className="w-full py-2 rounded bg-[#333333] hover:bg-[#444] text-gray-300 hover:text-white font-bold text-xs tracking-wider cursor-pointer border border-[#3c3c3c]"
+              className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-850 text-gray-300 font-bold text-xs tracking-widest cursor-pointer border border-slate-800 mt-2 hover:text-white transition-all uppercase"
             >
-              LEAVE cosmetics LABS
+              Back to Game
             </button>
           </div>
         )}
 
         {/* ==========================================
-            AUDIO FLOATING MUX CONTROLLER
+            SETTINGS MENU OVERLAY
             ========================================== */}
-        <div className="absolute top-4 right-4 flex items-center gap-2 z-10" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => setIsMuted(!isMuted)}
-            title={isMuted ? "Unmute Sound channels" : "Mute Sound channels"}
-            className="p-1 px-2 rounded bg-slate-950/85 hover:bg-slate-900/95 text-slate-300 border border-[#3c3c3c] flex items-center gap-1 transition-all"
-          >
-            {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
-            <span className="text-[10px] font-mono uppercase tracking-wider">{isMuted ? "Muted" : "Active"}</span>
-          </button>
-        </div>
-      </div>
+        {isSettingsOpen && (
+          <div className="absolute inset-0 bg-slate-950/98 p-6 flex flex-col justify-between items-center z-30 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            
+            <div className="w-full flex items-center justify-between border-b border-slate-850 pb-3 mt-4">
+              <span className="text-xs font-black text-indigo-400 flex items-center gap-1 uppercase tracking-wider">
+                <Settings className="w-4 h-4 text-indigo-400 animate-spin" style={{ animationDuration: '6s' }} />
+                <span>SETTINGS & CONFIG</span>
+              </span>
+              <button 
+                onClick={() => setIsSettingsOpen(false)}
+                className="text-gray-500 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-      {/* ==========================================
-          DEDICATED POWER-UP USER INTERFACE DISPLAY BAR
-          ========================================== */}
-      <div id="powerups-countdown-dashboard" className="w-full max-w-[400px] bg-[#252526] border border-[#3c3c3c] rounded-xl p-3 flex flex-col gap-2 mt-3 shadow-md">
-        <div className="flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase pb-1 border-b border-[#3c3c3c]">
-          <span className="flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-[#007acc] animate-pulse" />
-            <span>ACTIVE TIMED BUBBLE CORES</span>
-          </span>
-          <span className="text-gray-500 font-mono">STACKABLE HUD</span>
-        </div>
-
-        {activeBuffsList.length === 0 ? (
-          <div className="text-[10.5px] text-gray-600 italic text-center py-2">
-            No active bubble buffs. Look out for glowing green, blue, gold, purple, and rainbow cores!
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-2.5 pt-0.5">
-            {activeBuffsList.map((buff) => {
-              let label = "Invincible Shield";
-              let colorClasses = "bg-yellow-400";
-              let textHex = "text-yellow-400";
-              let icon = <Shield className="w-3.5 h-3.5" />;
+            {/* Settings Options list */}
+            <div className="flex-1 w-full py-6 space-y-5 text-left text-sans max-h-[380px] overflow-y-auto">
               
-              if (buff.type === "turbo") {
-                label = "Turbo Obstacle-Phase";
-                colorClasses = "bg-blue-400 animate-pulse";
-                textHex = "text-blue-400 font-bold";
-                icon = <Zap className="w-3.5 h-3.5" />;
-              }
-              if (buff.type === "magnet") {
-                label = "Coin Magnetizer Aura";
-                colorClasses = "bg-purple-400";
-                textHex = "text-purple-400";
-                icon = <Coins className="w-3.5 h-3.5" />;
-              }
-              if (buff.type === "slow_mo") {
-                label = "Environmental Time Warp (50%)";
-                colorClasses = "bg-emerald-400";
-                textHex = "text-emerald-400";
-                icon = <Clock className="w-3.5 h-3.5" />;
-              }
-              if (buff.type === "rainbow") {
-                label = "🌟 RAINBOW ENERGY GRID ACTIVATED";
-                colorClasses = "bg-gradient-to-r from-pink-500 via-sky-400 to-amber-300 h-full";
-                textHex = "text-pink-400 font-black";
-                icon = <Sparkles className="w-3.5 h-3.5 animate-spin" />;
-              }
-
-              const widthPercent = (buff.remaining / buff.maxDuration) * 100;
-              const secondsLeft = (buff.remaining / 60).toFixed(1);
-
-              return (
-                <div key={buff.type} className="flex flex-col gap-1 text-[11px] bg-slate-900/60 p-2 rounded border border-[#3c3c3c]">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-1.5">
-                      <span className={textHex}>{icon}</span>
-                      <span className="font-bold text-gray-200">{label}</span>
-                    </div>
-                    <span className="font-mono text-gray-300 text-[10px]">{secondsLeft}s left</span>
+              {/* Option 1: Double Audio controls */}
+              <div className="space-y-2">
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Audio Synth System</span>
+                <button 
+                  onClick={() => setIsMuted(prev => !prev)}
+                  className="w-full p-4 rounded-2xl bg-slate-900 border border-slate-850 flex items-center justify-between hover:bg-slate-850 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    {isMuted ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                    <span className="text-xs font-bold text-white">Interactive 8-Bit Synth Sounds</span>
                   </div>
-                  
-                  {/* Progress Countdown slider line */}
-                  <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full ${colorClasses} rounded-full transition-all duration-100 ease-linear`}
-                      style={{ width: `${widthPercent}%` }}
-                    />
+                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${isMuted ? "bg-rose-500/10 text-rose-400 border border-rose-500/35" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/35"}`}>
+                    {isMuted ? "MUTED" : "ENABLED"}
+                  </span>
+                </button>
+              </div>
+
+              {/* Option 2: Active Instructions Guide */}
+              <div className="space-y-2">
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">How to Play Guide</span>
+                <div className="p-4 rounded-x bg-slate-900 border border-slate-850 rounded-2xl text-[11px] leading-relaxed text-gray-400 space-y-2 select-text">
+                  <div className="flex items-center gap-1.5 text-white font-bold text-xs mb-1">
+                    <Info className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Control Directives</span>
                   </div>
+                  <p>
+                    Tap anywhere on the game screen, or press <kbd className="px-1 py-0.5 bg-slate-950 border border-slate-800 text-white text-[9px] rounded">SPACEBAR</kbd> / <kbd className="px-1 py-0.5 bg-slate-950 border border-slate-800 text-white text-[9px] rounded">ARROW UPs</kbd> to jump and flap coordinates.
+                  </p>
+                  <p>
+                    Pass safely through the corridors to gain points. Collect floating glowing bubbles to unlock timed special modifiers, magnetize gold coins, slow time down, or become invulnerable!
+                  </p>
                 </div>
-              );
-            })}
+              </div>
+
+              {/* Option 3: Reset diagnostics */}
+              <div className="space-y-2 border-t border-slate-850 pt-4">
+                <span className="text-[10px] text-rose-450 font-bold uppercase tracking-wider block">Destructive Actions</span>
+                <button 
+                  onClick={resetAllProgress}
+                  className="w-full py-3 rounded-2xl bg-rose-550/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500 hover:text-slate-950 font-black text-xs tracking-wider transition-all cursor-pointer text-center"
+                >
+                  FULL ERASE SAVE DATA
+                </button>
+              </div>
+            </div>
+
+            {/* Back action */}
+            <button 
+              onClick={() => setIsSettingsOpen(false)}
+              className="w-full py-3.5 rounded-2xl bg-[#030409] hover:bg-slate-900 text-gray-300 font-bold text-xs tracking-widest cursor-pointer border border-slate-800 mt-2 uppercase transition-all"
+            >
+              CLOSE SETTINGS
+            </button>
           </div>
         )}
-      </div>
 
-      {/* Under Screen scores reference widgets */}
-      <div className="w-full max-w-[400px] flex items-center justify-between mt-3 text-xs text-slate-400 px-1 font-mono uppercase">
-        <div className="flex gap-2.5 items-center">
-          <span className="font-semibold text-slate-300">SESSION COIN ACCUM: {coinsInSession}</span>
-        </div>
-        <div className="flex gap-4">
-          <span className="font-semibold text-amber-500 flex items-center gap-1">
-            <Coins className="w-3.5 h-3.5 text-amber-500" />
-            SAVINGS BANK: {totalCoins} COINS
-          </span>
-        </div>
       </div>
-
     </div>
   );
 };
